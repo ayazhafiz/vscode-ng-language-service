@@ -49,9 +49,9 @@ export function activate(context: vscode.ExtensionContext) {
   const client =
       new lsp.LanguageClient('Angular Language Service', serverOptions, clientOptions, forceDebug);
 
-  // Push the disposable to the context's subscriptions so that the
-  // client can be deactivated on extension deactivation
-  context.subscriptions.push(...registerCommands(client), client.start());
+  registerCommands(client, context);
+
+  context.subscriptions.push(client.start());
 
   client.onDidChangeState((e) => {
     let task: {resolve: () => void}|undefined;

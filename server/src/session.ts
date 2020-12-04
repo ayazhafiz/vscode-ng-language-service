@@ -32,6 +32,29 @@ enum LanguageId {
 // Empty definition range for files without `scriptInfo`
 const EMPTY_RANGE = lsp.Range.create(0, 0, 0, 0);
 
+interface GetTcbParams {
+  textDocument: lsp.TextDocumentIdentifier;
+  position: lsp.Position;
+}
+type GetTcbResponse = {
+  content: string,
+  start: number,
+  end: number,
+}|{
+  error: string,
+};
+const lspGetTcb = new lsp.RequestType<GetTcbParams, GetTcbResponse, void>('ng/getTcb');
+
+interface DesugarTemplateParams {
+  textDocument: lsp.TextDocumentIdentifier;
+  position: lsp.Position;
+}
+type DesugarTemplateResponse = string|undefined;
+const lspGetDesugaredTemplate =
+    new lsp.RequestType<DesugarTemplateParams, DesugarTemplateResponse, void>(
+        'ng/getDesugaredTemplate');
+
+
 /**
  * Session is a wrapper around lsp.IConnection, with all the necessary protocol
  * handlers installed for Angular language service.
@@ -102,6 +125,54 @@ export class Session {
     conn.onTypeDefinition(p => this.onTypeDefinition(p));
     conn.onHover(p => this.onHover(p));
     conn.onCompletion(p => this.onCompletion(p));
+    conn.onReferences(p => {
+      return [
+        {
+          uri: p.textDocument.uri,
+          range: lsp.Range.create(8, 2, 8, 7),
+        },
+      ];
+    });
+
+    conn.onRequest(lspGetTcb, p => this.onGetTcb(p));
+    conn.onRequest(lspGetDesugaredTemplate, p => this.onGetDesugaredTemplate(p));
+  }
+
+  private onGetTcb(params: GetTcbParams) {
+    const lsInfo = this.getLSAndScriptInfo(params.textDocument);
+    if (lsInfo === undefined) {
+      return;
+    }
+    const {languageService, scriptInfo} = lsInfo;
+    const offset = lspPositionToTsPosition(scriptInfo, params.position);
+    const ls = languageService as any;
+    if (ls.getTcb) {
+      return ls.getTcb(scriptInfo.fileName, offset);
+    }
+
+    return {
+      error: {
+        reason:
+            'ViewEngine Language Service does not support TCBs; consider using the Ivy Language Service.'
+      },
+    };
+  }
+
+  private onGetDesugaredTemplate(params: DesugarTemplateParams) {
+    const lsInfo = this.getLSAndScriptInfo(params.textDocument);
+    if (lsInfo === undefined) {
+      return;
+    }
+    const {languageService, scriptInfo} = lsInfo;
+    const offset = lspPositionToTsPosition(scriptInfo, params.position);
+    const ls = languageService as any;
+    if (ls.getDesugaredTemplate) {
+      this.info(`getting desugared template...`);
+      const res = ls.getDesugaredTemplate(scriptInfo.fileName, offset);
+      this.info(`got ${res}`);
+      return res;
+    }
+    return undefined;
   }
 
   /**
@@ -250,6 +321,7 @@ export class Session {
         workspace: {
           workspaceFolders: {supported: true},
         },
+        referencesProvider: true,
       },
     };
   }
